@@ -8,4 +8,7 @@ ruta_directorio_main = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ruta_directorio_main)
 
 if __name__ == "__main__":
-    indexacion.indexacion()
+    indexador = indexacion.Indexador()
+    indexador.preProcesar()
+    indexador.calcularTF_IDF()
+    indexador.mostrarDatos()

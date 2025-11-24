@@ -1,5 +1,7 @@
 # 1. Ignorar TODO lo que haya dentro de corpus
 /src/corpus/*
+/src/resultados/*
 
 # 2. ¡Pero no ignores el archivo .gitkeep!
 !/src/corpus/.gitkeep
+!/src/resultados/.gitkeep

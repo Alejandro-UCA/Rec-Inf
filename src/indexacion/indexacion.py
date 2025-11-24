@@ -1,51 +1,40 @@
-from . import crawler
 from . import preProcesado
-import os
+from . import tratarTexto
+from . import mostrarDatos
 import json
-import concurrent.futures # Librería para paralelismo
 
-# Función auxiliar que procesa UN solo archivo
-# Debe estar fuera de indexacion() para que funcione el paralelismo
-def preProcesarTrabajoHilo(ruta_completa):
-    try:
-        # Extraemos el nombre del archivo de la ruta
-        nombre_archivo = os.path.basename(ruta_completa)
-        
-        with open(ruta_completa, "r", encoding="utf-8") as f:
-            texto = f.read()
-            
-        # Procesamos
-        sin_lem, con_lem = preProcesado.preprocesar_texto(texto)
-        
-        # Retornamos el resultado para este archivo
-        return nombre_archivo, {"sin_lematizar": sin_lem, "lematizado": con_lem}
-    except Exception as e:
-        print(f"Error en {ruta_completa}: {e}")
-        return None
+class Indexador:
+    def __init__(self):
+        self.indiceLm = {} #{str: [int, dict{str: [int, [int]}]} -> Por cada token guardamos su IDF y una lista de los
+                            #documentos donde aparece y por cada documento su TF-IDF y las posiciones donde aparece
+        self.indiceNoLm = {}
+        self.vectoresNormalesLm = {}
+        self.vectoresNormalesNoLm = {}
 
-def indexacion():
-    crawler.crawler()
-    ruta_corpus = "./corpus/"
+    def preProcesar(self):
+        preProcesado.preProcesamiento()
+
+    def calcularTF_IDF(self, textoPreProcesado = None):
+        self.indiceLm, self.indiceNoLm, self.vectoresNormalesLm, self.vectoresNormalesNoLm \
+            = tratarTexto.tf_idf(self.indiceLm, self.indiceNoLm, textoPreProcesado)
+        with open("./resultados/indiceLematizado.json", "w", encoding="utf-8") as f:
+            json.dump(self.indiceLm, f, ensure_ascii=False, indent=4)
+        with open("./resultados/indiceNoLematizado.json", "w", encoding="utf-8") as f:
+            json.dump(self.indiceNoLm, f, ensure_ascii=False, indent=4)
+        with open("./resultados/vectoresNormalesLematizado.json", "w", encoding="utf-8") as f:
+            json.dump(self.vectoresNormalesLm, f, ensure_ascii=False, indent=4)
+        with open("./resultados/vectoresNormalesNoLematizado.json", "w", encoding="utf-8") as f:
+            json.dump(self.vectoresNormalesNoLm, f, ensure_ascii=False, indent=4)
     
-    # Usamos os.scandir en lugar de listdir (es más rápido leyendo directorios)
-    # Creamos una lista con las rutas COMPLETAS
-    rutas_archivos = [entry.path for entry in os.scandir(ruta_corpus) if entry.is_file()]
+    def cargarIndices(self):
+        with open("./resultados/indiceLematizado.json", "r", encoding="utf-8") as f:
+            self.indiceLm = json.load(f)
+        with open("./resultados/indiceNoLematizado.json", "r", encoding="utf-8") as f:
+            self.indiceNoLm = json.load(f)
+        with open("./resultados/vectoresNormalesLematizado.json", "r", encoding="utf-8") as f:
+            self.vectoresNormalesLm = json.load(f)
+        with open("./resultados/vectoresNormalesNoLematizado.json", "r", encoding="utf-8") as f:
+            self.vectoresNormalesNoLm = json.load(f)
     
-    textoPreProcesado = {}
-
-    print(f"Procesando {len(rutas_archivos)} archivos en paralelo...")
-
-    # ProcessPoolExecutor usa múltiples núcleos de la CPU
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        # map aplica la función a cada archivo de la lista
-        resultados = executor.map(preProcesarTrabajoHilo, rutas_archivos)
-
-        # Recogemos los resultados a medida que terminan
-        for resultado in resultados:
-            if resultado:
-                nombre, datos = resultado
-                textoPreProcesado[nombre] = datos
-
-    # Guardado final
-    with open("./resultados/textoPreProcesado.json", "w", encoding="utf-8") as f:
-        json.dump(textoPreProcesado, f, ensure_ascii=False, indent=4)
+    def mostrarDatos(self):
+        mostrarDatos.mostrarDatos()
