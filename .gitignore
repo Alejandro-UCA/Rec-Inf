@@ -1,1 +1,5 @@
-/corpus/
+# 1. Ignorar TODO lo que haya dentro de corpus
+/src/corpus/*
+
+# 2. ¡Pero no ignores el archivo .gitkeep!
+!/src/corpus/.gitkeep
