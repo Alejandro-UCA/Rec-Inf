@@ -6,7 +6,7 @@ def crawler():
     try:
         reponse = requests.get(url)
         if reponse.status_code == 200:
-            print("Crawling the webpage...")
+            print("Crawleando la pagina...")
             soup = BeautifulSoup(reponse.content, 'html.parser')
             enlaces = soup.find_all('a')
             for enlace in enlaces:
@@ -18,10 +18,10 @@ def crawler():
                     if documento.status_code == 200:
                         with open("./corpus/"+href.split("/")[-1], "w", encoding="utf-8") as f:
                             f.write(documento.text + "\n")
-                        print(f"Downloaded and saved: {href}")
+                        print(f"Descargado y guardado en: {href}")
         else:
-            print(f"Error: Unable to fetch the URL. Status code: {reponse.status_code}")
+            print(f"Error: Unalbe to fetch the URL. Status code: {reponse.status_code}")
             return None
     except Exception as e:
-        print(f"Exception occurred: {e}")
+        print(f"Excepción: {e}")
         return None
