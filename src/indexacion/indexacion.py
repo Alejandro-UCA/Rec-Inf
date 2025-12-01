@@ -27,18 +27,7 @@ class Indexador:
             json.dump(self.vectoresNormalesLm, f, ensure_ascii=False, indent=4)
         with open("./resultados/vectoresNormalesNoLematizado.json", "w", encoding="utf-8") as f:
             json.dump(self.vectoresNormalesNoLm, f, ensure_ascii=False, indent=4)
-    
-    # Carga los índices y vectores normales desde archivos JSON
-    def cargarIndices(self):
-        with open("./resultados/indiceLematizado.json", "r", encoding="utf-8") as f:
-            self.indiceLm = json.load(f)
-        with open("./resultados/indiceNoLematizado.json", "r", encoding="utf-8") as f:
-            self.indiceNoLm = json.load(f)
-        with open("./resultados/vectoresNormalesLematizado.json", "r", encoding="utf-8") as f:
-            self.vectoresNormalesLm = json.load(f)
-        with open("./resultados/vectoresNormalesNoLematizado.json", "r", encoding="utf-8") as f:
-            self.vectoresNormalesNoLm = json.load(f)
-    
+
     # Muestra los datos de los índices y vectores normales
     def mostrarDatos(self):
         mostrarDatos.mostrarDatos()

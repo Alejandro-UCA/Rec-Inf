@@ -1,0 +1,20 @@
+from busqueda import Buscador
+import os
+
+# 1. Obtiene la ruta absoluta de la carpeta donde está ESTE archivo (main.py)
+ruta_directorio_main = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Le dice a Python: "Muévete a esa carpeta antes de hacer nada más"
+os.chdir(ruta_directorio_main)
+
+if __name__ == "__main__":
+    buscador = Buscador.Buscador() # Crear una instancia de la clase Buscador
+    buscador.pedirTipoIndice()
+    buscador.cargarIndices()
+    while True:
+        documentos = buscador.pedirConsulta()
+        if documentos is not None:
+            print("Documentos encontrados:", documentos)
+        else:
+            print("No se encontraron documentos o la consulta fue vacía.")
+        
