@@ -1,7 +1,7 @@
 import json
 import re
 import math
-from indexacion.preProcesado import preprocesar_consulta
+from indexacion.preProcesado import preprocesar_texto
 
 class Buscador:
     def __init__(self):
@@ -96,7 +96,7 @@ class Buscador:
 
         return "(No se encontró un fragmento relevante)"
 
-    def calcular_similitud_coseno_OR(self, documento, consulta, indice):
+    def calcular_similitud_coseno(self, documento, consulta, indice):
         # similitud entre el documento (dj) y la consulta (q)
         valor_absoluto_dj = self.vectoresNormales[documento]
         # calcular el valor absoluto del vector de la consulta
@@ -119,31 +119,6 @@ class Buscador:
 
         return producto_escalar / (valor_absoluto_dj * valor_absoluto_q)
     
-    def calcular_similitud_coseno_AND(self, documento, consulta, indice):
-        # similitud entre el documento (dj) y la consulta (q)
-        valor_absoluto_dj = self.vectoresNormales[documento]
-        # calcular el valor absoluto del vector de la consulta
-        # cuando hablamos de w_iq nos referimos al idf de la palabra i en la consulta q
-        sumatorio = 0.0
-        for palabra in consulta:
-            sumatorio += (indice[palabra][0])**2
-        valor_absoluto_q = math.sqrt(sumatorio)
-        # calcular el numerador, es decir, el producto escalar entre dj y q
-        producto_escalar = 0.0
-        for palabra in consulta:
-            tf_idf_dj = 0.0
-            if documento in indice[palabra][1]:
-                tf_idf_dj = indice[palabra][1][documento][0]
-            else :
-                return 0.0  # Si falta alguna palabra, la similitud es 0
-            tf_idf_q = indice[palabra][0]  # idf de la palabra en la consulta
-            producto_escalar += tf_idf_dj * tf_idf_q
-
-        if valor_absoluto_dj == 0.0 or valor_absoluto_q == 0.0:
-            return 0.0
-        
-        return producto_escalar / (valor_absoluto_dj * valor_absoluto_q)
-        
     def pedirConsulta(self):
         consulta = input("Ingrese su consulta: ")
         print(f"Consulta recibida: {consulta}")
@@ -153,29 +128,45 @@ class Buscador:
             return None
         
         # preprocesar_texto devuelve una TUPLA (sin_lematizar, lematizado)
-        self.consulta, self.logicaAplicada = preprocesar_consulta(self, consulta, self.tipoIndice)
+        sinLen, conLen = preprocesar_texto(consulta)
+        if self.tipoIndice == "1":
+            self.consulta = conLen
+        else:
+            self.consulta = sinLen
         # Asegurarse de que self.consulta sea una lista de palabras
+
+        #CAMBIO AQUI: Obtenemos una lista de los trozos de la consulta separados por AND
         if isinstance(self.consulta, str):
-            self.consulta = self.consulta.split()  # separar por espacios
+            self.consulta = self.consulta.replace(" or ", " ").split(" and ")  # separar por AND
+
+        documentos_a_rankear = None
+        tokens_consulta = []
 
         # Recuperar documentos relevantes
-        documentos_encontrados = set()
-        for palabra in self.consulta:
-            if palabra in self.indice:
-                documentos_palabra = self.indice[palabra][1].keys()
-                documentos_encontrados.update(documentos_palabra)
+        for trozo_OR in self.consulta:
+            tokens = trozo_OR.split()
+            documentos_encontrados = set()
+            for palabra in tokens:
+                if palabra in self.indice:
+                    tokens_consulta.append(palabra)
+                    documentos_palabra = self.indice[palabra][1].keys()
+                    documentos_encontrados.update(documentos_palabra)
+            
+            #Ya tenemos los documentos encontrados para este trozo OR, ahora el "AND" no es mas que la
+            #interseccion con los documentos ya encontrados
+            if documentos_a_rankear is None:
+                documentos_a_rankear = documentos_encontrados
+            else:
+                documentos_a_rankear = documentos_a_rankear.intersection(documentos_encontrados)
         
-        if not documentos_encontrados:
+        if not documentos_a_rankear:
             print("No existen documentos relevantes para esta consulta.")
             return None
 
         # Ranking de documentos usando similitud coseno
         ranking_documentos = {}
-        for documento in documentos_encontrados:
-            if self.logicaAplicada == "AND":
-                ranking_documentos[documento] = self.calcular_similitud_coseno_AND(documento, self.consulta, self.indice)
-            else:
-                ranking_documentos[documento] = self.calcular_similitud_coseno_OR(documento, self.consulta, self.indice)
+        for documento in documentos_a_rankear:
+            ranking_documentos[documento] = self.calcular_similitud_coseno(documento, tokens_consulta, self.indice)
 
         # Ordenar por similitud descendente
         ranking_documentos = dict(sorted(ranking_documentos.items(), key=lambda item: item[1], reverse=True))
@@ -188,10 +179,10 @@ class Buscador:
             print(f"\nDocumento: {doc}")
             print(f"Ranking: {score:.4f}")
 
-            # Mostrar fragmento del primer término de la consulta
-            termino = self.consulta[0]
-            fragmento = self.obtener_fragmento(doc, termino)
-            print(f"Fragmento: {fragmento}")
+            # Mostrar fragmento
+            for termino in tokens_consulta:
+                fragmento = self.obtener_fragmento(doc, termino)
+                print(f"Fragmento: {fragmento}")
 
         print("\n===== FIN RESULTADOS =====")
 

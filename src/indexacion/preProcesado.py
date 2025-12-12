@@ -53,30 +53,6 @@ def preprocesar_texto(texto):
 
     return textoSinLematizar, textoLematizado
 
-def preprocesar_consulta(self, consulta, tipoIndice):
-    # Preprocesamos la consulta igual que los documentos
-    consulta_sin_lem, consulta_con_lem = preprocesar_texto(consulta)
-    
-    # Detectamos la lógica aplicada (AND, OR)
-    logicaAplicada = "OR"  # Por defecto
-    if " AND " in consulta.upper():
-        logicaAplicada = "AND"
-        #eliminar de la consulta las palabras AND
-        consulta = consulta.replace(" AND ", " ")
-        print(f"Consulta tras eliminar AND: {consulta}")
-    elif " OR " in consulta.upper():
-        logicaAplicada = "OR"
-        #eliminar de la consulta las palabras OR
-        consulta = consulta.replace(" OR ", " ")
-        print(f"Consulta tras eliminar OR: {consulta}")
-    
-    if tipoIndice == "1":
-        consulta_preprocesada = consulta_con_lem
-    else:
-        consulta_preprocesada = consulta_sin_lem
-        
-    return consulta_preprocesada, logicaAplicada
-
 """
 Función para lematizar el texto usando spaCy.
 Args:
