@@ -1,7 +1,7 @@
 import json
 import re
 import math
-from indexacion.preProcesado import preprocesar_texto
+from indexacion.preProcesado import preprocesar_consulta
 
 class Buscador:
     def __init__(self):
@@ -9,7 +9,8 @@ class Buscador:
         self.vectoresNormales = {}
         self.consulta = ""
         self.tipoIndice = ""
-        self.top_n = 20    # Número de resultados a mostrar por defecto
+        self.logicaAplicada = ""
+        self.top_n = 5    # Número de resultados a mostrar por defecto
     
     # pedirTipoIndice: Pregunta al usuario qué tipo de índice desea usar
     def pedirTipoIndice(self):
@@ -152,15 +153,7 @@ class Buscador:
             return None
         
         # preprocesar_texto devuelve una TUPLA (sin_lematizar, lematizado)
-        consultaIni = preprocesar_texto(consulta)
-        textoSinLematizar, textoLematizado = consultaIni
-
-        # Elegimos según índice
-        if self.tipoIndice == "1":
-            self.consulta = textoLematizado
-        else:
-            self.consulta = textoSinLematizar
-
+        self.consulta, self.logicaAplicada = preprocesar_consulta(self, consulta, self.tipoIndice)
         # Asegurarse de que self.consulta sea una lista de palabras
         if isinstance(self.consulta, str):
             self.consulta = self.consulta.split()  # separar por espacios
@@ -179,7 +172,10 @@ class Buscador:
         # Ranking de documentos usando similitud coseno
         ranking_documentos = {}
         for documento in documentos_encontrados:
-            ranking_documentos[documento] = self.calcular_similitud_coseno_OR(documento, self.consulta, self.indice)
+            if self.logicaAplicada == "AND":
+                ranking_documentos[documento] = self.calcular_similitud_coseno_AND(documento, self.consulta, self.indice)
+            else:
+                ranking_documentos[documento] = self.calcular_similitud_coseno_OR(documento, self.consulta, self.indice)
 
         # Ordenar por similitud descendente
         ranking_documentos = dict(sorted(ranking_documentos.items(), key=lambda item: item[1], reverse=True))
