@@ -8,6 +8,12 @@ ruta_directorio_main = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ruta_directorio_main)
 
 if __name__ == "__main__":
+    # Si no están las dependencias instaladas, instalarlas
+    if not os.path.exists("../venv"): # NO SE SI ESTO VA
+        print("No se encontraron dependencias. Instalando...")
+        os.system("pip install -r ./requirements.txt")
+        os.system("python -m spacy download en_core_web_sm")
+    
     indexador = indexacion.Indexador() # Crear una instancia de la clase Indexador
     indexador.preProcesar()
     indexador.calcularTF_IDF()

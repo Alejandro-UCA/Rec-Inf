@@ -1,4 +1,4 @@
-from busqueda import Buscador
+from busqueda import busqueda
 import os
 
 # 1. Obtiene la ruta absoluta de la carpeta donde está ESTE archivo (main.py)
@@ -8,9 +8,13 @@ ruta_directorio_main = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ruta_directorio_main)
 
 if __name__ == "__main__":
-    buscador = Buscador.Buscador() # Crear una instancia de la clase Buscador
+    # Iniciar búsqueda
+    buscador = busqueda.Buscador() # Crear una instancia de la clase Buscador
     buscador.pedirTipoIndice()
     buscador.cargarIndices()
+    if not buscador.indice or not buscador.vectoresNormales:
+        print("No se pudieron cargar los índices. Saliendo del programa.")
+        exit(1)
     while True:
         documentos = buscador.pedirConsulta()
         if documentos is not None:
