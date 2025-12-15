@@ -126,46 +126,45 @@ class Buscador:
     # Buscar la siguiente aparición de una frase en un texto tokenizado
     # parametros: frase_tokens: lista de terminos de la frase
     #             position: posición desde donde empezar a buscar
-    def next_phrase(self, frase_tokens, position = 0):
-        """
-        Devuelve el índice de inicio y fin de la primera aparición de frase_tokens en texto_tokens
-        empezando desde start_pos. Retorna None si no se encuentra.
-        """
+    def next_phrase(self, frase_tokens, doc, position=0):
         n = len(frase_tokens)
         v = position
 
-        # desde i = 1 hasta n hacer
-        #    v <- next(ti, v)
-        # next(ti, v): Devuelve la siguiente aparición del término ti después de la posición v (o vacio si no hay más)
         for i in range(n):
-            v = self.next_term(frase_tokens[i], v)
-        if v is None:
-            return None
+            v = self.next_term(frase_tokens[i], doc, v)
+            if v is None:
+                return None
+
         u = v
-        # desde i = n-1 hasta 1 hacer
         for i in range(n-1, -1, -1):
-            # prev(ti, u): Devuelve la anterior aparición del término ti antes de la posición u (o vacio si no hay más)
-            u = self.prev_term(frase_tokens[i], u)
-        if (v-u) == n-1:
+            u = self.prev_term(frase_tokens[i], doc, u)
+            if u is None:
+                return None
+
+        if (v - u) == n - 1:
             return (u, v)
         else:
-            return self.next_phrase(frase_tokens, position = u+1)
+            return self.next_phrase(frase_tokens, doc, position=u + 1)
     
-    def next_term(self, term, position):
-        # Devuelve la siguiente aparición del término term después de la posición position (o None si no hay más)
+    def next_term(self, term, doc, position):
         if term not in self.indice:
             return None
-        posiciones = self.indice[term][2]  # lista de posiciones del término en el corpus
+        if doc not in self.indice[term][1]:
+            return None
+
+        posiciones = self.indice[term][1][doc][1]
         for pos in posiciones:
             if pos > position:
                 return pos
         return None
     
-    def prev_term(self, term, position):
-        # Devuelve la anterior aparición del término term antes de la posición position (o None si no hay más)
+    def prev_term(self, term, doc, position):
         if term not in self.indice:
             return None
-        posiciones = self.indice[term][2]  # lista de posiciones del término en el corpus
+        if doc not in self.indice[term][1]:
+            return None
+
+        posiciones = self.indice[term][1][doc][1]
         for pos in reversed(posiciones):
             if pos < position:
                 return pos
@@ -194,7 +193,7 @@ class Buscador:
             tokensL = tokensL.split()
         tokens = tokensL if self.tipoIndice == "1" else tokensNL
         return tokens
-    
+
     # Pedir consulta al usuario y procesarla
     def pedirConsulta(self):
         consulta = input("Ingrese su consulta: ")
@@ -225,26 +224,26 @@ class Buscador:
             frases = re.findall(r'"(.*?)"', bloque)
             for frase in frases:
                 frases_exactas.append(frase)
-            # Eliminar las frases del bloque
-            bloque_sin_frases = re.sub(r'"(.*?)"', '', bloque)
             # 3) Remplazar los ORs por " "
-            bloque_sin_frases = bloque_sin_frases.replace(" OR ", " ")
+            bloque = bloque.replace(" OR ", " ")
             # 4) Preprocesar la consulta según
-            bloques_procesados.append(self.preprocesar_consulta(bloque_sin_frases))
+            bloques_procesados.append(self.preprocesar_consulta(bloque))
         
         # 5) Buscar documentos que cumplan los bloques AND
         documentos_candidatos_and = self.procesar_Bloques_AND(bloques_procesados)
         if not documentos_candidatos_and:
             return None
-    
+        
         # 6) Filtrar por frases exactas usando la funcion next_phrase
         for frase in frases_exactas:
             tokens_frase = self.preprocesar_consulta(frase)
             documentos_a_eliminar = set()
             for doc in documentos_candidatos_and:
+                print(f"  Verificando en documento: {doc} para la frase '{frase}'")
                 encontrado = False
                 while True:
-                    resultado = self.next_phrase(tokens_frase)
+                    resultado = self.next_phrase(tokens_frase, doc)
+                    print(f"    Resultado de next_phrase: {resultado}")
                     if resultado is None:
                         break
                     else:
@@ -253,6 +252,7 @@ class Buscador:
                 if not encontrado:
                     documentos_a_eliminar.add(doc)
             documentos_candidatos_and.difference_update(documentos_a_eliminar)
+            print (f"Documentos candidatos tras filtrar frase '{frase}': {documentos_candidatos_and}")
             if not documentos_candidatos_and:
                 return None
         
