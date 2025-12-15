@@ -98,23 +98,25 @@ class Buscador:
         return "(No se encontró un fragmento relevante)"
 
     # Calcular similitud coseno entre un documento y la consulta
-    def calcular_similitud_coseno(self, documento, consulta, indice):
+    def calcular_similitud_coseno(self, documento, tokens_consulta):
         # similitud entre el documento (dj) y la consulta (q)
         valor_absoluto_dj = self.vectoresNormales[documento]
         # calcular el valor absoluto del vector de la consulta
         # cuando hablamos de w_iq nos referimos al idf de la palabra i en la consulta q
         sumatorio = 0.0
-        for palabra in consulta:
-            sumatorio += (indice[palabra][0])**2
+        for palabra in tokens_consulta:
+            if palabra in self.indice:
+                sumatorio += (self.indice[palabra][0])**2
         valor_absoluto_q = math.sqrt(sumatorio)
         # calcular el numerador, es decir, el producto escalar entre dj y q
         producto_escalar = 0.0
-        for palabra in consulta:
-            tf_idf_dj = 0.0
-            if documento in indice[palabra][1]:
-                tf_idf_dj = indice[palabra][1][documento][0]
-            tf_idf_q = indice[palabra][0]  # idf de la palabra en la consulta
-            producto_escalar += tf_idf_dj * tf_idf_q
+        for palabra in tokens_consulta:
+            if palabra in self.indice:
+                tf_idf_dj = 0.0
+                if documento in self.indice[palabra][1]:
+                    tf_idf_dj = self.indice[palabra][1][documento][0]
+                tf_idf_q = self.indice[palabra][0]  # idf de la palabra en la consulta
+                producto_escalar += tf_idf_dj * tf_idf_q
 
         if valor_absoluto_dj == 0.0 or valor_absoluto_q == 0.0:
             return 0.0
@@ -122,164 +124,77 @@ class Buscador:
         return producto_escalar / (valor_absoluto_dj * valor_absoluto_q)
     
     # Buscar la siguiente aparición de una frase en un texto tokenizado
-    def next_phrase(self, texto_tokens, frase_tokens, start_pos=0):
+    # parametros: frase_tokens: lista de terminos de la frase
+    #             position: posición desde donde empezar a buscar
+    def next_phrase(self, frase_tokens, position = 0):
         """
         Devuelve el índice de inicio y fin de la primera aparición de frase_tokens en texto_tokens
         empezando desde start_pos. Retorna None si no se encuentra.
         """
         n = len(frase_tokens)
-        v = start_pos
+        v = position
 
-        while v < len(texto_tokens):
-            # Buscar primer token de la frase
-            try:
-                v = texto_tokens.index(frase_tokens[0], v)
-            except ValueError:
-                return None  # no se encuentra
-
-            # Verificar secuencia completa
-            u = v
-            match = True
-            for i in range(n):
-                if v + i >= len(texto_tokens) or texto_tokens[v + i] != frase_tokens[i]:
-                    match = False
-                    break
-            if match:
-                return (u, u + n - 1)  # posiciones inicio-fin de la frase
-            v += 1  # avanzar y buscar siguiente posible inicio
-
+        # desde i = 1 hasta n hacer
+        #    v <- next(ti, v)
+        # next(ti, v): Devuelve la siguiente aparición del término ti después de la posición v (o vacio si no hay más)
+        for i in range(n):
+            v = self.next_term(frase_tokens[i], v)
+        if v is None:
+            return None
+        u = v
+        # desde i = n-1 hasta 1 hacer
+        for i in range(n-1, -1, -1):
+            # prev(ti, u): Devuelve la anterior aparición del término ti antes de la posición u (o vacio si no hay más)
+            u = self.prev_term(frase_tokens[i], u)
+        if (v-u) == n-1:
+            return (u, v)
+        else:
+            return self.next_phrase(frase_tokens, position = u+1)
+    
+    def next_term(self, term, position):
+        # Devuelve la siguiente aparición del término term después de la posición position (o None si no hay más)
+        if term not in self.indice:
+            return None
+        posiciones = self.indice[term][2]  # lista de posiciones del término en el corpus
+        for pos in posiciones:
+            if pos > position:
+                return pos
         return None
-    # Verificar si un documento contiene una frase exacta
-    def documento_contiene_frase(self, documento, frase_tokens):
-        """
-        Devuelve True si el documento contiene la frase EXACTA consecutiva,
-        usando la misma normalización que el índice.
-        """
-        try:
-            with open(f"./corpus/{documento}", "r", encoding="utf-8") as f:
-                texto = f.read()
-        except FileNotFoundError:
-            return False
-
-        # Preprocesar documento según el tipo de índice
-        sinLen, conLen = preprocesar_texto(texto)
-        texto_tokens = conLen if self.tipoIndice == "1" else sinLen
-
-        # Preprocesar también la frase con el mismo método
-        frase_str = " ".join(frase_tokens)
-        frase_sin, frase_con = preprocesar_texto(frase_str)
-        frase_proc = frase_con if self.tipoIndice == "1" else frase_sin
-
-        n = len(frase_proc)
-        for i in range(len(texto_tokens) - n + 1):
-            if texto_tokens[i:i+n] == frase_proc:
-                return True
-
-        return False
-
-
-    # Analizar la consulta en bloques AND y términos/frases
-    def parsear_consulta(self, consulta):
-        # Devuelve una lista de bloques AND, donde cada bloque es una lista de términos o frases.
-        # Extraer frases entre comillas
-        frases = re.findall(r'"([^"]+)"', consulta)
-
-        # Reemplazarlas por marcadores
-        consulta_tmp = consulta
-        mapa_frases = {}
-        for i, frase in enumerate(frases):
-            key = f"__FRASE_{i}__"
-            mapa_frases[key] = frase
-            consulta_tmp = consulta_tmp.replace(f'"{frase}"', key)
-
-        # Separar por AND
-        bloques_and = re.split(r'\s+AND\s+|\s+and\s+', consulta_tmp)
-
-        resultado = []
-
-        for bloque in bloques_and:
-            tokens = bloque.split()
-            elementos = []
-            for t in tokens:
-                if t in mapa_frases:
-                    # frase exacta
-                    frase_tokens = mapa_frases[t].split()
-                    elementos.append({
-                        "tipo": "frase",
-                        "valor": frase_tokens
-                    })
-                elif t.upper() != "OR":
-                    elementos.append({
-                        "tipo": "termino",
-                        "valor": t
-                    })
-            resultado.append(elementos)
-
-        return resultado
-
-    # Funcion que maneja las consultas default, las OR y las AND
-    def buscar_y_rankear(self):
-        """
-        Busca documentos asegurando que:
-        - todas las frases exactas aparezcan consecutivamente en el documento
-        - solo documentos que cumplan todas las frases entran al ranking
-        - si hay términos sueltos, se usan para ranking TF-IDF, pero no permiten que documentos que no contienen la frase entren
-        """
-        # Obtener la consulta como string
-        consulta_str = self.consulta if isinstance(self.consulta, str) else " ".join(self.consulta)
-        bloques_and = self.parsear_consulta(consulta_str)
-
+    
+    def prev_term(self, term, position):
+        # Devuelve la anterior aparición del término term antes de la posición position (o None si no hay más)
+        if term not in self.indice:
+            return None
+        posiciones = self.indice[term][2]  # lista de posiciones del término en el corpus
+        for pos in reversed(posiciones):
+            if pos < position:
+                return pos
+        return None
+    
+    def procesar_Bloques_AND(self, bloques_procesados):
         documentos_candidatos = None
-        tokens_consulta = []
-        frases_consulta = []
+        for bloque in bloques_procesados:
+            documentos_bloque = set()
+            for termino in bloque:
+                if termino in self.indice:
+                    documentos_termino = set(self.indice[termino][1].keys())
+                    documentos_bloque.update(documentos_termino)
+        if documentos_candidatos is None:
+            documentos_candidatos = documentos_bloque
+        else:
+            documentos_candidatos.intersection_update(documentos_bloque)
+        return documentos_candidatos
+    
+    def preprocesar_consulta(self, consulta):
+        tokensNL, tokensL = preprocesar_texto(consulta)
+        if isinstance(tokensNL, str):
+            tokensNL = tokensNL.split()
 
-        # Extraer términos y frases de la consulta
-        for bloque in bloques_and:
-            docs_bloque = set()
-            for elem in bloque:
-                if elem["tipo"] == "termino":
-                    palabra = elem["valor"]
-                    tokens_consulta.append(palabra)
-                    if palabra in self.indice:
-                        docs_bloque |= set(self.indice[palabra][1].keys())
-                else:
-                    frases_consulta.append(elem["valor"])
-            documentos_candidatos = docs_bloque if documentos_candidatos is None else documentos_candidatos & docs_bloque
-
-        # Si no hay términos sueltos, considerar todos los documentos
-        if not tokens_consulta:
-            documentos_candidatos = set(self.vectoresNormales.keys())
-
-        if not documentos_candidatos:
-            print("No existen documentos relevantes para esta consulta.")
-            return None, None
-
-        # FILTRADO ESTRICTO: solo documentos que contengan TODAS las frases consecutivas
-        documentos_finales = set()
-        for doc in documentos_candidatos:
-            cumple = True
-            for frase in frases_consulta:
-                if not self.documento_contiene_frase(doc, frase):
-                    cumple = False
-                    break
-            if cumple:
-                documentos_finales.add(doc)
-
-        if not documentos_finales:
-            print("No hay documentos que contengan las frases exactas.")
-            return None, None
-
-        # Ranking por TF-IDF solo sobre términos sueltos (si hay)
-        ranking_documentos = {}
-        for doc in documentos_finales:
-            if tokens_consulta:
-                ranking_documentos[doc] = self.calcular_similitud_coseno(doc, tokens_consulta, self.indice)
-            else:
-                ranking_documentos[doc] = 1.0  # si no hay términos, score fijo para mostrar
-
-        return ranking_documentos, tokens_consulta
-
-
+        if isinstance(tokensL, str):
+            tokensL = tokensL.split()
+        tokens = tokensL if self.tipoIndice == "1" else tokensNL
+        return tokens
+    
     # Pedir consulta al usuario y procesarla
     def pedirConsulta(self):
         consulta = input("Ingrese su consulta: ")
@@ -289,22 +204,70 @@ class Buscador:
             print("Consulta vacía. Por favor, ingrese una consulta válida.")
             return None
         
-        # preprocesar_texto devuelve una TUPLA (sin_lematizar, lematizado)
-        sinLen, conLen = preprocesar_texto(consulta)
-        if self.tipoIndice == "1":
-            self.consulta = conLen
-        else:
-            self.consulta = sinLen
+        # "way galaxy", WAY MILKY
+        # 1) Separar la consulta por ANDs
+        # 2) Tratar las comillas dobles como frases exactas
+        # 3) Remplazar los ORs por " "
+        # 4) Preprocesar la consulta según
+        # Nos debería quedar: Bloques OR, cada bloque con términos (ANDs) y frases exactas (en otra variable)
+        # 5) A los bloques normales de OR buscamos los documentos que contengan al menos un término de cada bloque
+        # 6) A LAS FRASES le filtramos los documentos que no contengan las frases exactas y descartamos las que no valgan
+        # 7) Hacemos la intersección de los documentos que cumplen cada bloque AND  
         
-        ranking_documentos, tokens_consulta = self.buscar_y_rankear()
-
-        if ranking_documentos is None or tokens_consulta is None:
+        self.consulta = consulta
+        # 1) Separar la consulta por ANDs
+        bloques_and = [bloque.strip() for bloque in consulta.split(" AND ")]
+        bloques_procesados = []
+        frases_exactas = []
+        # 2) 3) 4)
+        for bloque in bloques_and:
+            # 2) Tratar las comillas dobles como frases exactas
+            frases = re.findall(r'"(.*?)"', bloque)
+            for frase in frases:
+                frases_exactas.append(frase)
+            # Eliminar las frases del bloque
+            bloque_sin_frases = re.sub(r'"(.*?)"', '', bloque)
+            # 3) Remplazar los ORs por " "
+            bloque_sin_frases = bloque_sin_frases.replace(" OR ", " ")
+            # 4) Preprocesar la consulta según
+            bloques_procesados.append(self.preprocesar_consulta(bloque_sin_frases))
+        
+        # 5) Buscar documentos que cumplan los bloques AND
+        documentos_candidatos_and = self.procesar_Bloques_AND(bloques_procesados)
+        if not documentos_candidatos_and:
             return None
-            
-        # Ordenar por similitud descendente
-        ranking_documentos = dict(sorted(ranking_documentos.items(), key=lambda item: item[1], reverse=True))
-        # Limitar a los N primeros
-        documentos_ordenados = list(ranking_documentos.items())[:self.top_n]
+    
+        # 6) Filtrar por frases exactas usando la funcion next_phrase
+        for frase in frases_exactas:
+            tokens_frase = self.preprocesar_consulta(frase)
+            documentos_a_eliminar = set()
+            for doc in documentos_candidatos_and:
+                encontrado = False
+                while True:
+                    resultado = self.next_phrase(tokens_frase)
+                    if resultado is None:
+                        break
+                    else:
+                        encontrado = True
+                        break
+                if not encontrado:
+                    documentos_a_eliminar.add(doc)
+            documentos_candidatos_and.difference_update(documentos_a_eliminar)
+            if not documentos_candidatos_and:
+                return None
+        
+        # 7) Calcular similitud coseno y rankear
+        tokens_consulta = []
+        for bloque in bloques_procesados:
+            tokens_consulta.extend(bloque)
+        documentos_con_similitud = []
+        for doc in documentos_candidatos_and:
+            similitud = self.calcular_similitud_coseno(doc, tokens_consulta)
+            documentos_con_similitud.append((doc, similitud))
+        # Ordenar documentos por similitud (de mayor a menor)
+        documentos_ordenados = sorted(documentos_con_similitud, key=lambda x: x[1], reverse=True)
+        # Limitar a top N resultados
+        documentos_ordenados = documentos_ordenados[:self.top_n]
 
         # Mostrar resultados
         print("\n===== RESULTADOS DEL RANKING =====")
