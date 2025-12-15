@@ -2,6 +2,7 @@ import json
 import re
 import math
 from indexacion.preProcesado import preprocesar_texto
+from busqueda.preProcesado import preprocesar_consulta
 
 class Buscador:
     def __init__(self):
@@ -99,53 +100,51 @@ class Buscador:
 
     # Calcular similitud coseno entre un documento y la consulta
     def calcular_similitud_coseno(self, documento, tokens_consulta):
-        # similitud entre el documento (dj) y la consulta (q)
         valor_absoluto_dj = self.vectoresNormales[documento]
-        # calcular el valor absoluto del vector de la consulta
-        # cuando hablamos de w_iq nos referimos al idf de la palabra i en la consulta q
+        
+        tokens_unicos = set(tokens_consulta)
         sumatorio = 0.0
-        for palabra in tokens_consulta:
+        for palabra in tokens_unicos:
             if palabra in self.indice:
                 sumatorio += (self.indice[palabra][0])**2
         valor_absoluto_q = math.sqrt(sumatorio)
-        # calcular el numerador, es decir, el producto escalar entre dj y q
+        
         producto_escalar = 0.0
-        for palabra in tokens_consulta:
+        for palabra in tokens_consulta: 
             if palabra in self.indice:
                 tf_idf_dj = 0.0
                 if documento in self.indice[palabra][1]:
                     tf_idf_dj = self.indice[palabra][1][documento][0]
-                tf_idf_q = self.indice[palabra][0]  # idf de la palabra en la consulta
+                
+                tf_idf_q = self.indice[palabra][0]
                 producto_escalar += tf_idf_dj * tf_idf_q
 
         if valor_absoluto_dj == 0.0 or valor_absoluto_q == 0.0:
             return 0.0
 
         return producto_escalar / (valor_absoluto_dj * valor_absoluto_q)
-    
     # Buscar la siguiente aparición de una frase en un texto tokenizado
     # parametros: frase_tokens: lista de terminos de la frase
     #             position: posición desde donde empezar a buscar
-    def next_phrase(self, frase_tokens, doc, position=0):
+    def next_phrase(self, frase_tokens, doc, position=-1):
         n = len(frase_tokens)
-        v = position
-
-        for i in range(n):
+        
+        u = self.next_term(frase_tokens[0], doc, position)
+        
+        if u is None:
+            return None
+        
+        v = u
+        for i in range(1, n):
             v = self.next_term(frase_tokens[i], doc, v)
             if v is None:
-                return None
+                return self.next_phrase(frase_tokens, doc, position=u)
 
-        u = v
-        for i in range(n-1, -1, -1):
-            u = self.prev_term(frase_tokens[i], doc, u)
-            if u is None:
-                return None
-
-        if (v - u) == n - 1:
+        if (v - u) == (n - 1):
             return (u, v)
         else:
-            return self.next_phrase(frase_tokens, doc, position=u + 1)
-    
+            return self.next_phrase(frase_tokens, doc, position=u)
+
     def next_term(self, term, doc, position):
         if term not in self.indice:
             return None
@@ -158,41 +157,39 @@ class Buscador:
                 return pos
         return None
     
-    def prev_term(self, term, doc, position):
-        if term not in self.indice:
-            return None
-        if doc not in self.indice[term][1]:
-            return None
-
-        posiciones = self.indice[term][1][doc][1]
-        for pos in reversed(posiciones):
-            if pos < position:
-                return pos
-        return None
-    
-    def procesar_Bloques_AND(self, bloques_procesados):
+    def procesar_Bloques(self, bloques_procesados):
         documentos_candidatos = None
         for bloque in bloques_procesados:
             documentos_bloque = set()
             for termino in bloque:
-                if termino in self.indice:
-                    documentos_termino = set(self.indice[termino][1].keys())
-                    documentos_bloque.update(documentos_termino)
+                if len(termino.split()) > 1:
+                    # Frase exacta
+                    tokens_frase = termino.split()
+                    primera_palabra = tokens_frase[0]
+                    if primera_palabra in self.indice:
+                        documentos_tokens_frase = set(self.indice[primera_palabra][1].keys())
+                        for documento in documentos_tokens_frase:
+                            encontrado = False
+                            pos = 0
+                            while True:
+                                resultado = self.next_phrase(tokens_frase, documento, pos)
+                                if resultado is None:
+                                    break
+                                else:
+                                    encontrado = True
+                                    break
+                            if encontrado:
+                                documentos_bloque.add(documento)
+                else:
+                    #Token simple
+                    if termino in self.indice:
+                        documentos_termino = set(self.indice[termino][1].keys())
+                        documentos_bloque.update(documentos_termino)
         if documentos_candidatos is None:
             documentos_candidatos = documentos_bloque
         else:
             documentos_candidatos.intersection_update(documentos_bloque)
         return documentos_candidatos
-    
-    def preprocesar_consulta(self, consulta):
-        tokensNL, tokensL = preprocesar_texto(consulta)
-        if isinstance(tokensNL, str):
-            tokensNL = tokensNL.split()
-
-        if isinstance(tokensL, str):
-            tokensL = tokensL.split()
-        tokens = tokensL if self.tipoIndice == "1" else tokensNL
-        return tokens
 
     # Pedir consulta al usuario y procesarla
     def pedirConsulta(self):
@@ -214,55 +211,17 @@ class Buscador:
         # 7) Hacemos la intersección de los documentos que cumplen cada bloque AND  
         
         self.consulta = consulta
-        # 1) Separar la consulta por ANDs
-        bloques_and = [bloque.strip() for bloque in consulta.split(" AND ")]
-        bloques_procesados = []
-        frases_exactas = []
-        # 2) 3) 4)
-        for bloque in bloques_and:
-            # 2) Tratar las comillas dobles como frases exactas
-            frases = re.findall(r'"(.*?)"', bloque)
-            for frase in frases:
-                frases_exactas.append(frase)
-            # 3) Remplazar los ORs por " "
-            bloque = bloque.replace(" OR ", " ")
-            # 4) Preprocesar la consulta según
-            bloques_procesados.append(self.preprocesar_consulta(bloque))
         
-        # 5) Buscar documentos que cumplan los bloques AND
-        documentos_candidatos_and = self.procesar_Bloques_AND(bloques_procesados)
-        if not documentos_candidatos_and:
+        bloques_a_procesar, lista_de_tokens = preprocesar_consulta(consulta, self.tipoIndice)
+        
+        documentos_candidatos = self.procesar_Bloques(bloques_a_procesar)
+
+        if not documentos_candidatos:
             return None
         
-        # 6) Filtrar por frases exactas usando la funcion next_phrase
-        for frase in frases_exactas:
-            tokens_frase = self.preprocesar_consulta(frase)
-            documentos_a_eliminar = set()
-            for doc in documentos_candidatos_and:
-                print(f"  Verificando en documento: {doc} para la frase '{frase}'")
-                encontrado = False
-                while True:
-                    resultado = self.next_phrase(tokens_frase, doc)
-                    print(f"    Resultado de next_phrase: {resultado}")
-                    if resultado is None:
-                        break
-                    else:
-                        encontrado = True
-                        break
-                if not encontrado:
-                    documentos_a_eliminar.add(doc)
-            documentos_candidatos_and.difference_update(documentos_a_eliminar)
-            print (f"Documentos candidatos tras filtrar frase '{frase}': {documentos_candidatos_and}")
-            if not documentos_candidatos_and:
-                return None
-        
-        # 7) Calcular similitud coseno y rankear
-        tokens_consulta = []
-        for bloque in bloques_procesados:
-            tokens_consulta.extend(bloque)
         documentos_con_similitud = []
-        for doc in documentos_candidatos_and:
-            similitud = self.calcular_similitud_coseno(doc, tokens_consulta)
+        for doc in documentos_candidatos:
+            similitud = self.calcular_similitud_coseno(doc, lista_de_tokens)
             documentos_con_similitud.append((doc, similitud))
         # Ordenar documentos por similitud (de mayor a menor)
         documentos_ordenados = sorted(documentos_con_similitud, key=lambda x: x[1], reverse=True)
@@ -276,7 +235,7 @@ class Buscador:
             print(f"Ranking: {score:.4f}")
 
             # Mostrar fragmento
-            for termino in tokens_consulta:
+            for termino in lista_de_tokens:
                 fragmento = self.obtener_fragmento(doc, termino)
                 print(f"Fragmento: {fragmento}")
 
