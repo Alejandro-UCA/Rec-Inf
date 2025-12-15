@@ -15,7 +15,7 @@ if __name__ == "__main__":
     if not buscador.indice or not buscador.vectoresNormales:
         print("No se pudieron cargar los índices. Saliendo del programa.")
         exit(1)
-    while True:
+    while exit := input("¿Desea realizar una búsqueda? (s/n): ").lower() == 's':
         documentos = buscador.pedirConsulta()
         if documentos is not None:
             print("Documentos encontrados:", documentos)

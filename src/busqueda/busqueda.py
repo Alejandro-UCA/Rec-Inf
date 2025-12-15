@@ -95,6 +95,68 @@ class Buscador:
                 return " ".join(fragmento_resaltado)
 
         return "(No se encontró un fragmento relevante)"
+    
+    # Funcion que maneja las consultas default, las OR y las AND
+    def buscar_y_rankear(self):
+        if not isinstance(self.consulta, str):
+            consulta_original = " ".join(self.consulta)
+        else:
+            consulta_original = self.consulta
+
+        bloques_and = self.parsear_consulta(consulta_original)
+
+        documentos_a_rankear = None
+        tokens_consulta = []
+        frases_consulta = []
+
+        for bloque in bloques_and:
+            docs_bloque = None
+
+            for elem in bloque:
+                if elem["tipo"] == "termino":
+                    palabra = elem["valor"]
+                    if palabra in self.indice:
+                        tokens_consulta.append(palabra)
+                        docs_palabra = set(self.indice[palabra][1].keys())
+                    else:
+                        docs_palabra = set()
+
+                    docs_bloque = docs_palabra if docs_bloque is None else docs_bloque.union(docs_palabra)
+
+                else:  # frase
+                    frases_consulta.append(elem["valor"])
+
+            if documentos_a_rankear is None:
+                documentos_a_rankear = docs_bloque
+            else:
+                documentos_a_rankear = documentos_a_rankear.intersection(docs_bloque)
+
+        if not documentos_a_rankear:
+            print("No existen documentos relevantes para esta consulta.")
+            return None, None
+
+        # Filtrar por frases exactas
+        documentos_finales = set()
+        for doc in documentos_a_rankear:
+            cumple = True
+            for frase in frases_consulta:
+                if not self.documento_contiene_frase(doc, frase):
+                    cumple = False
+                    break
+            if cumple:
+                documentos_finales.add(doc)
+
+        if not documentos_finales:
+            print("No hay documentos que contengan las frases exactas.")
+            return None, None
+
+        ranking_documentos = {}
+        for documento in documentos_finales:
+            ranking_documentos[documento] = self.calcular_similitud_coseno(
+                documento, tokens_consulta, self.indice
+            )
+
+        return ranking_documentos, tokens_consulta
 
     def calcular_similitud_coseno(self, documento, consulta, indice):
         # similitud entre el documento (dj) y la consulta (q)
@@ -119,6 +181,56 @@ class Buscador:
 
         return producto_escalar / (valor_absoluto_dj * valor_absoluto_q)
     
+    def documento_contiene_frase(self, documento, frase_tokens):
+        try:
+            with open(f"./corpus/{documento}", "r", encoding="utf-8") as f:
+                texto = f.read().lower()
+        except FileNotFoundError:
+            return False
+
+        texto_tokens = preprocesar_texto(texto)[0]  # sin lematizar
+        frase = " ".join(frase_tokens)
+
+        return frase in " ".join(texto_tokens)
+
+    def parsear_consulta(self, consulta):
+        # Devuelve una lista de bloques AND, donde cada bloque es una lista de términos o frases.
+        # Extraer frases entre comillas
+        frases = re.findall(r'"([^"]+)"', consulta)
+
+        # Reemplazarlas por marcadores
+        consulta_tmp = consulta
+        mapa_frases = {}
+        for i, frase in enumerate(frases):
+            key = f"__FRASE_{i}__"
+            mapa_frases[key] = frase
+            consulta_tmp = consulta_tmp.replace(f'"{frase}"', key)
+
+        # Separar por AND
+        bloques_and = re.split(r'\s+AND\s+|\s+and\s+', consulta_tmp)
+
+        resultado = []
+
+        for bloque in bloques_and:
+            tokens = bloque.split()
+            elementos = []
+            for t in tokens:
+                if t in mapa_frases:
+                    # frase exacta
+                    frase_tokens = mapa_frases[t].split()
+                    elementos.append({
+                        "tipo": "frase",
+                        "valor": frase_tokens
+                    })
+                elif t.upper() != "OR":
+                    elementos.append({
+                        "tipo": "termino",
+                        "valor": t
+                    })
+            resultado.append(elementos)
+
+        return resultado
+
     def pedirConsulta(self):
         consulta = input("Ingrese su consulta: ")
         print(f"Consulta recibida: {consulta}")
@@ -133,41 +245,12 @@ class Buscador:
             self.consulta = conLen
         else:
             self.consulta = sinLen
-        # Asegurarse de que self.consulta sea una lista de palabras
-
-        #CAMBIO AQUI: Obtenemos una lista de los trozos de la consulta separados por AND
-        if isinstance(self.consulta, str):
-            self.consulta = self.consulta.replace(" or ", " ").split(" and ")  # separar por AND
-
-        documentos_a_rankear = None
-        tokens_consulta = []
-
-        # Recuperar documentos relevantes
-        for trozo_OR in self.consulta:
-            tokens = trozo_OR.split()
-            documentos_encontrados = set()
-            for palabra in tokens:
-                if palabra in self.indice:
-                    tokens_consulta.append(palabra)
-                    documentos_palabra = self.indice[palabra][1].keys()
-                    documentos_encontrados.update(documentos_palabra)
-            
-            #Ya tenemos los documentos encontrados para este trozo OR, ahora el "AND" no es mas que la
-            #interseccion con los documentos ya encontrados
-            if documentos_a_rankear is None:
-                documentos_a_rankear = documentos_encontrados
-            else:
-                documentos_a_rankear = documentos_a_rankear.intersection(documentos_encontrados)
         
-        if not documentos_a_rankear:
-            print("No existen documentos relevantes para esta consulta.")
+        ranking_documentos, tokens_consulta = self.buscar_y_rankear()
+
+        if ranking_documentos is None or tokens_consulta is None:
             return None
-
-        # Ranking de documentos usando similitud coseno
-        ranking_documentos = {}
-        for documento in documentos_a_rankear:
-            ranking_documentos[documento] = self.calcular_similitud_coseno(documento, tokens_consulta, self.indice)
-
+            
         # Ordenar por similitud descendente
         ranking_documentos = dict(sorted(ranking_documentos.items(), key=lambda item: item[1], reverse=True))
         # Limitar a los N primeros
