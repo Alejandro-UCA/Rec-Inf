@@ -1,7 +1,6 @@
 import json
 import re
 import math
-from indexacion.preProcesado import preprocesar_texto
 from busqueda.preProcesado import preprocesar_consulta
 
 class Buscador:
@@ -59,7 +58,7 @@ class Buscador:
             except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
                 print(f"Error al cargar los índices: {e}")
 
-    # Obtener un fragmento del documento alrededor de la palabra buscada
+    # Obtener un fragmento del documento alrededor de la palabra o frase buscada
     def obtener_fragmento(self, documento, palabra):
         try:
             ruta = f"./corpus/{documento}"
@@ -68,33 +67,56 @@ class Buscador:
         except FileNotFoundError:
             return "(No se pudo abrir el documento)"
 
-        # --- Preprocesar cada token para que coincida con la consulta ---
+        # --- Normalizar tokens del documento ---
         texto_normalizado = []
         for t in texto_original:
-            # eliminar puntuación y símbolos sueltos igual que en preprocesar_texto
             t_norm = re.sub(r'[^\w\s-]', '', t.lower())
             t_norm = re.sub(r'(?<!\w)-|-(?!\w)', '', t_norm)
             t_norm = re.sub(r'\b\w*\d+\b', '', t_norm)
             texto_normalizado.append(t_norm)
 
-        palabra_lower = palabra.lower()
+        # --- Normalizar la consulta (palabra o frase) ---
+        palabra_norm = re.sub(r'[^\w\s-]', '', palabra.lower())
+        palabra_norm = re.sub(r'(?<!\w)-|-(?!\w)', '', palabra_norm)
+        tokens_consulta = palabra_norm.split()
 
-        # Buscar primera coincidencia normalizada
-        for i, t_norm in enumerate(texto_normalizado):
-            if t_norm == palabra_lower:
-                inicio = max(0, i - 5)
-                fin = min(len(texto_original), i + 10)
-                fragmento = texto_original[inicio:fin]
+        n = len(tokens_consulta)
 
-                # resaltar usando la palabra NORMALIZADA
-                fragmento_resaltado = []
-                for real, norm in zip(fragmento, texto_normalizado[inicio:fin]):
-                    if norm == palabra_lower:
-                        fragmento_resaltado.append(f"**{real}**")
-                    else:
-                        fragmento_resaltado.append(real)
+        # --- Buscar palabra simple ---
+        if n == 1:
+            for i, t_norm in enumerate(texto_normalizado):
+                if t_norm == tokens_consulta[0]:
+                    inicio = max(0, i - 5)
+                    fin = min(len(texto_original), i + 10)
 
-                return " ".join(fragmento_resaltado)
+                    fragmento_resaltado = []
+                    for real, norm in zip(
+                        texto_original[inicio:fin],
+                        texto_normalizado[inicio:fin]
+                    ):
+                        if norm == tokens_consulta[0]:
+                            fragmento_resaltado.append(f"**{real}**")
+                        else:
+                            fragmento_resaltado.append(real)
+
+                    return " ".join(fragmento_resaltado)
+
+        # --- Buscar frase exacta (ej. "way galaxy") ---
+        else:
+            for i in range(len(texto_normalizado) - n + 1):
+                if texto_normalizado[i:i + n] == tokens_consulta:
+                    inicio = max(0, i - 5)
+                    fin = min(len(texto_original), i + n + 5)
+
+                    fragmento_resaltado = []
+                    for idx in range(inicio, fin):
+                        real = texto_original[idx]
+                        if i <= idx < i + n:
+                            fragmento_resaltado.append(f"**{real}**")
+                        else:
+                            fragmento_resaltado.append(real)
+
+                    return " ".join(fragmento_resaltado)
 
         return "(No se encontró un fragmento relevante)"
 

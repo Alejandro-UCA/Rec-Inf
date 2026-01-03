@@ -17,8 +17,7 @@ if __name__ == "__main__":
         exit(1)
     while exit := input("¿Desea realizar una búsqueda? (s/n): ").lower() == 's':
         documentos = buscador.pedirConsulta()
-        if documentos is not None:
-            print("Documentos encontrados:", documentos)
-        else:
+        if documentos is None:
             print("No se encontraron documentos o la consulta fue vacía.")
+
         
