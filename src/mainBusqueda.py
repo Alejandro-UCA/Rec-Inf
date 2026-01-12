@@ -12,6 +12,7 @@ if __name__ == "__main__":
     buscador = busqueda.Buscador() # Crear una instancia de la clase Buscador
     buscador.pedirTipoIndice()
     buscador.cargarIndices()
+    buscador.pedirTopN()
     if not buscador.indice or not buscador.vectoresNormales:
         print("No se pudieron cargar los índices. Saliendo del programa.")
         exit(1)
