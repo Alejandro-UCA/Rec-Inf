@@ -241,6 +241,8 @@ class Buscador:
         if not documentos_candidatos:
             return None
         
+        lista_de_tokens = [palabra for token in lista_de_tokens for palabra in token.split()]
+
         documentos_con_similitud = []
         for doc in documentos_candidatos:
             similitud = self.calcular_similitud_coseno(doc, lista_de_tokens)
