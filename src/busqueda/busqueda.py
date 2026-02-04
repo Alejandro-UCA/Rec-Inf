@@ -67,7 +67,6 @@ class Buscador:
         except FileNotFoundError:
             return "(No se pudo abrir el documento)"
 
-        # --- Normalizar tokens del documento ---
         texto_normalizado = []
         for t in texto_original:
             t_norm = re.sub(r'[^\w\s-]', '', t.lower())
@@ -75,14 +74,13 @@ class Buscador:
             t_norm = re.sub(r'\b\w*\d+\b', '', t_norm)
             texto_normalizado.append(t_norm)
 
-        # --- Normalizar la consulta (palabra o frase) ---
         palabra_norm = re.sub(r'[^\w\s-]', '', palabra.lower())
         palabra_norm = re.sub(r'(?<!\w)-|-(?!\w)', '', palabra_norm)
         tokens_consulta = palabra_norm.split()
 
         n = len(tokens_consulta)
 
-        # --- Buscar palabra simple ---
+        #Buscar palabra simple
         if n == 1:
             for i, t_norm in enumerate(texto_normalizado):
                 if t_norm == tokens_consulta[0]:
@@ -101,7 +99,7 @@ class Buscador:
 
                     return " ".join(fragmento_resaltado)
 
-        # --- Buscar frase exacta (ej. "way galaxy") ---
+        #Buscar frase exacta (ej. "way galaxy")
         else:
             for i in range(len(texto_normalizado) - n + 1):
                 if texto_normalizado[i:i + n] == tokens_consulta:
@@ -124,7 +122,9 @@ class Buscador:
     def calcular_similitud_coseno(self, documento, tokens_consulta):
         valor_absoluto_dj = self.vectoresNormales[documento]
         
-        tokens_unicos = set(tokens_consulta)
+        # Aseguramos normalización al calcular similitud también
+        tokens_unicos = set([t.lower() for t in tokens_consulta])
+        
         sumatorio = 0.0
         for palabra in tokens_unicos:
             if palabra in self.indice:
@@ -132,7 +132,7 @@ class Buscador:
         valor_absoluto_q = math.sqrt(sumatorio)
         
         producto_escalar = 0.0
-        for palabra in tokens_consulta: 
+        for palabra in [t.lower() for t in tokens_consulta]: 
             if palabra in self.indice:
                 tf_idf_dj = 0.0
                 if documento in self.indice[palabra][1]:
@@ -145,9 +145,8 @@ class Buscador:
             return 0.0
 
         return producto_escalar / (valor_absoluto_dj * valor_absoluto_q)
+
     # Buscar la siguiente aparición de una frase en un texto tokenizado
-    # parametros: frase_tokens: lista de terminos de la frase
-    #             position: posición desde donde empezar a buscar
     def next_phrase(self, frase_tokens, doc, position=-1):
         n = len(frase_tokens)
         
@@ -181,13 +180,17 @@ class Buscador:
     
     def procesar_Bloques(self, bloques_procesados):
         documentos_candidatos = None
+        
         for bloque in bloques_procesados:
-            documentos_bloque = set()
+            documentos_bloque = None
+            
             for termino in bloque:
+                docs_termino_actual = set()
+
                 if len(termino.split()) > 1:
-                    # Frase exacta
-                    tokens_frase = termino.split()
+                    tokens_frase = [t.lower() for t in termino.split()]
                     primera_palabra = tokens_frase[0]
+                    
                     if primera_palabra in self.indice:
                         documentos_tokens_frase = set(self.indice[primera_palabra][1].keys())
                         for documento in documentos_tokens_frase:
@@ -201,16 +204,34 @@ class Buscador:
                                     encontrado = True
                                     break
                             if encontrado:
-                                documentos_bloque.add(documento)
+                                docs_termino_actual.add(documento)
                 else:
-                    #Token simple
-                    if termino in self.indice:
-                        documentos_termino = set(self.indice[termino][1].keys())
-                        documentos_bloque.update(documentos_termino)
+                    termino_norm = termino.lower()
+                    if termino_norm in self.indice:
+                        docs_del_token = set(self.indice[termino_norm][1].keys())
+                        docs_termino_actual.update(docs_del_token)
+                
+                #AND
+                if documentos_bloque is None:
+                    documentos_bloque = docs_termino_actual.copy()
+                else:
+                    documentos_bloque.intersection_update(docs_termino_actual)
+
+                    if not documentos_bloque:
+                        break
+            
+            # Si el bloque esta vacio (None)
+            if documentos_bloque is None:
+                documentos_bloque = set()
+
+            if documentos_candidatos is None:
+                documentos_candidatos = documentos_bloque
+            else:
+                documentos_candidatos.intersection_update(documentos_bloque)
+
         if documentos_candidatos is None:
-            documentos_candidatos = documentos_bloque
-        else:
-            documentos_candidatos.intersection_update(documentos_bloque)
+            return set()
+            
         return documentos_candidatos
 
     # Pedir consulta al usuario y procesarla
@@ -222,16 +243,6 @@ class Buscador:
             print("Consulta vacía. Por favor, ingrese una consulta válida.")
             return None
         
-        # "way galaxy", WAY MILKY
-        # 1) Separar la consulta por ANDs
-        # 2) Tratar las comillas dobles como frases exactas
-        # 3) Remplazar los ORs por " "
-        # 4) Preprocesar la consulta según
-        # Nos debería quedar: Bloques OR, cada bloque con términos (ANDs) y frases exactas (en otra variable)
-        # 5) A los bloques normales de OR buscamos los documentos que contengan al menos un término de cada bloque
-        # 6) A LAS FRASES le filtramos los documentos que no contengan las frases exactas y descartamos las que no valgan
-        # 7) Hacemos la intersección de los documentos que cumplen cada bloque AND  
-        
         self.consulta = consulta
         
         bloques_a_procesar, lista_de_tokens = preprocesar_consulta(consulta, self.tipoIndice)
@@ -241,12 +252,14 @@ class Buscador:
         if not documentos_candidatos:
             return None
         
-        lista_de_tokens = [palabra for token in lista_de_tokens for palabra in token.split()]
+        # Normalizamos también aquí para calcular coseno
+        lista_de_tokens = [palabra.lower() for token in lista_de_tokens for palabra in token.split()]
 
         documentos_con_similitud = []
         for doc in documentos_candidatos:
             similitud = self.calcular_similitud_coseno(doc, lista_de_tokens)
             documentos_con_similitud.append((doc, similitud))
+            
         # Ordenar documentos por similitud (de mayor a menor)
         documentos_ordenados = sorted(documentos_con_similitud, key=lambda x: x[1], reverse=True)
         # Limitar a top N resultados
@@ -258,7 +271,7 @@ class Buscador:
             print(f"\nDocumento: {doc}")
             print(f"Ranking: {score:.4f}")
 
-            # Mostrar fragmento
+            # Mostrar fragmento (usamos la lista original para mantener semántica, pero la función maneja lower)
             for termino in lista_de_tokens:
                 fragmento = self.obtener_fragmento(doc, termino)
                 print(f"Fragmento: {fragmento}")
