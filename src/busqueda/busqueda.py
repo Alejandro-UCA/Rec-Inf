@@ -66,7 +66,8 @@ class Buscador:
                 texto_original = f.read().split()
         except FileNotFoundError:
             return "(No se pudo abrir el documento)"
-
+        
+        # --- Normalizar tokens del documento ---
         texto_normalizado = []
         for t in texto_original:
             t_norm = re.sub(r'[^\w\s-]', '', t.lower())
@@ -74,13 +75,14 @@ class Buscador:
             t_norm = re.sub(r'\b\w*\d+\b', '', t_norm)
             texto_normalizado.append(t_norm)
 
+        # --- Normalizar la consulta (palabra o frase) ---
         palabra_norm = re.sub(r'[^\w\s-]', '', palabra.lower())
         palabra_norm = re.sub(r'(?<!\w)-|-(?!\w)', '', palabra_norm)
         tokens_consulta = palabra_norm.split()
 
         n = len(tokens_consulta)
 
-        #Buscar palabra simple
+        # --- Buscar palabra simple ---
         if n == 1:
             for i, t_norm in enumerate(texto_normalizado):
                 if t_norm == tokens_consulta[0]:
@@ -99,7 +101,7 @@ class Buscador:
 
                     return " ".join(fragmento_resaltado)
 
-        #Buscar frase exacta (ej. "way galaxy")
+        # --- Buscar frase exacta (ej. "way galaxy") ---
         else:
             for i in range(len(texto_normalizado) - n + 1):
                 if texto_normalizado[i:i + n] == tokens_consulta:
@@ -147,6 +149,8 @@ class Buscador:
         return producto_escalar / (valor_absoluto_dj * valor_absoluto_q)
 
     # Buscar la siguiente aparición de una frase en un texto tokenizado
+    # parametros: frase_tokens: lista de terminos de la frase
+    #             position: posición desde donde empezar a buscar
     def next_phrase(self, frase_tokens, doc, position=-1):
         n = len(frase_tokens)
         
@@ -238,6 +242,17 @@ class Buscador:
     def pedirConsulta(self):
         consulta = input("Ingrese su consulta: ")
         print(f"Consulta recibida: {consulta}")
+        
+        # Ejemplos para el ver el workflow "way galaxy", WAY MILKY
+        # 1) Separar la consulta por ANDs
+        # 2) Tratar las comillas dobles como frases exactas
+        # 3) Remplazar los ORs por " "
+        # 4) Preprocesar la consulta según
+        # Nos debería quedar: Bloques OR, cada bloque con términos (ANDs) y frases exactas (en otra variable)
+        # 5) A los bloques normales de OR buscamos los documentos que contengan al menos un término de cada bloque
+        # 6) A LAS FRASES le filtramos los documentos que no contengan las frases exactas y descartamos las que no valgan
+        # 7) Hacemos la intersección de los documentos que cumplen cada bloque AND  
+        
         
         if consulta.strip() == "":
             print("Consulta vacía. Por favor, ingrese una consulta válida.")
